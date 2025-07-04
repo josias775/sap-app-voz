@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>App Voz - Preenchimento Automático Campo por Campo</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+  label { display: block; margin-top: 12px; font-weight: bold; }
+  input { width: 100%; padding: 8px; margin-top: 4px; font-size: 16px; }
+  button { margin-top: 20px; padding: 12px 20px; font-size: 18px; cursor: pointer; }
+  #status { margin-top: 15px; font-weight: bold; color: #006600; }
+</style>
+</head>
+<body>
+
+<h1>Preenchimento por voz (campo por campo)</h1>
+<p>Fale por partes, exemplo: <br>
+<strong>"turma 3"</strong> ou <strong>"data início dia 01 barra 07"</strong> etc.</p>
+
+<label>Turma:<input id="turma" readonly /></label>
+<label>Data Início:<input id="dataInicio" readonly /></label>
+<label>Data Final:<input id="dataFinal" readonly /></label>
+<label>Hora Início:<input id="horaInicio" readonly /></label>
+<label>Hora Final:<input id="horaFinal" readonly /></label>
+<label>Instalação:<input id="instalacao" readonly /></label>
+<label>OP:<input id="op" readonly /></label>
+<label>Motivo:<input id="motivo" readonly /></label>
+<label>Origem:<input id="origem" readonly /></label>
+<label>Classificação:<input id="classificacao" readonly /></label>
+<label>Nota PM:<input id="nota" readonly /></label>
+
+<button id="startBtn">Começar a falar</button>
+
+<div id="status"></div>
+
+<script>
+  function extrairCampo(palavraChave, fala) {
+    const regex = new RegExp(palavraChave + '\\s+([^,]+)', 'i');
+    const match = fala.match(regex);
+    if (match) return match[1].trim();
+    return '';
+  }
+
+  function converterHoraExtenso(horaStr) {
+    const mapaNumeros = {
+      'zero': '0', 'um': '1', 'dois': '2', 'três': '3', 'quatro': '4',
+      'cinco': '5', 'seis': '6', 'sete': '7', 'oito': '8', 'nove': '9',
+      'dez': '10', 'onze': '11', 'doze': '12', 'treze': '13', 'catorze': '14',
+      'quinze': '15', 'dezesseis': '16', 'dezessete': '17', 'dezoito': '18',
+      'dezenove': '19', 'vinte': '20', 'trinta': '30', 'quarenta': '40', 'cinquenta': '50'
+    };
+
+    let partes = horaStr.toLowerCase().split(' ');
+    let numeros = [];
+    for (let parte of partes) {
+      if (parte === 'pontos' || parte === 'ponto') {
+        numeros.push(':');
+      } else if (mapaNumeros.hasOwnProperty(parte)) {
+        numeros.push(mapaNumeros[parte]);
+      } else if (/^\d+$/.test(parte)) {
+        numeros.push(parte);
+      }
+    }
+    let horaFormatada = numeros.join('');
+    if (horaFormatada.length >= 5) return horaFormatada.slice(0,5);
+    return horaFormatada;
+  }
+
+  function parseFalaParcial(fala) {
+    fala = fala.toLowerCase();
+    let campos = {};
+
+    if (fala.includes('turma')) campos.turma = extrairCampo('turma', fala);
+    if (fala.includes('data início')) {
+      let dataInicio = extrairCampo('data início dia', fala);
+      if(dataInicio) campos.dataInicio = dataInicio.replace(/barra/g, '/');
+    }
+    if (fala.includes('data final')) {
+      let dataFinal = extrairCampo('data final dia', fala);
+      if(dataFinal) campos.dataFinal = dataFinal.replace(/barra/g, '/');
+    }
+    if (fala.includes('hora início')) {
+      let raw = extrairCampo('hora início', fala);
+      campos.horaInicio = converterHoraExtenso(raw);
+    }
+    if (fala.includes('hora final')) {
+      let raw = extrairCampo('hora final', fala);
+      campos.horaFinal = converterHoraExtenso(raw);
+    }
+    if (fala.includes('instalação')) campos.instalacao = extrairCampo('instalação', fala);
+    if (fala.includes('op')) campos.op = extrairCampo('op', fala);
+    if (fala.includes('motivo')) campos.motivo = extrairCampo('motivo', fala);
+    if (fala.includes('origem')) campos.origem = extrairCampo('origem', fala);
+    if (fala.includes('classificação')) campos.classificacao = extrairCampo('classificação', fala);
+    if (fala.includes('nota pm')) campos.nota = extrairCampo('nota pm', fala);
+
+    return campos;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const statusDiv = document.getElementById('status');
+  const startBtn = document.getElementById('startBtn');
+
+  if (!SpeechRecognition) {
+    statusDiv.textContent = 'Seu navegador não suporta reconhecimento de voz.';
+    startBtn.disabled = true;
+  } else {
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'pt-BR';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      statusDiv.textContent = 'Ouvindo... fale um campo de cada vez.';
+      startBtn.disabled = true;
+    };
+
+    recognition.onresult = (event) => {
+      const fala = event.results[0][0].transcript;
+      statusDiv.textContent = 'Texto capturado: ' + fala;
+
+      const campos = parseFalaParcial(fala);
+
+      for (const campo in campos) {
+        const input = document.getElementById(campo);
+        if (input) input.value = campos[campo];
+      }
+
+      startBtn.disabled = false;
+    };
+
+    recognition.onerror = (event) => {
+      statusDiv.textContent = 'Erro no reconhecimento: ' + event.error;
+      startBtn.disabled = false;
+    };
+
+    recognition.onspeechend = () => {
+      recognition.stop();
+      statusDiv.textContent += ' (Fim da fala detectado)';
+    };
+
+    startBtn.onclick = () => {
+      recognition.start();
+    };
+  }
+</script>
+
+</body>
+</html>
